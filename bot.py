@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord.ui import View, Button
+from discord.ui import View, Button, Modal, TextInput
 import os
 
 intents = discord.Intents.default()
@@ -11,21 +11,31 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 GUILD_ID = 1463251661421285388
 STAFF_ROLE_NAME = "Staff"
-ticket_count = 0  # egyszerű számláló (restart után nullázódik)
+ticket_count = 0
 
-class TicketView(View):
-    def __init__(self):
-        super().__init__(timeout=None)  # örökké élő view
+# Pingelendő role ID-k
+PING_ROLES = [
+    1463254825256091761,
+    1463254505700462614,
+    1463252057635946578
+]
 
-    @discord.ui.button(label="Open Ticket", style=discord.ButtonStyle.green, custom_id="open_ticket")
-    async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+class TicketModal(Modal):
+    def __init__(self, user: discord.Member):
+        super().__init__(title="Nyiss egy ticketet")
+        self.user = user
+        self.reason = TextInput(label="Miért nyitsz ticketet?", style=discord.TextStyle.paragraph)
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
         global ticket_count
         ticket_count += 1
         guild = interaction.guild
 
+        # Jogosultságok
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
         }
 
         staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
@@ -35,18 +45,30 @@ class TicketView(View):
         channel_name = f"ticket-{ticket_count}"
         ticket_channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
 
-        # Close gomb létrehozása
+        # Close gomb
         close_view = View(timeout=None)
         close_button = Button(label="Close Ticket", style=discord.ButtonStyle.red)
 
         async def close_callback(close_interaction):
+            # Opció: modal kérdés záráskor
             await ticket_channel.delete()
 
         close_button.callback = close_callback
         close_view.add_item(close_button)
 
-        await ticket_channel.send("🎫 Ticket létrehozva!", view=close_view)
+        # Ping a három rang
+        ping_text = " ".join([f"<@&{r}>" for r in PING_ROLES])
+        await ticket_channel.send(f"{ping_text}\n🎫 {self.user.mention} nyitott egy ticketet!\n**Ok:** {self.reason.value}", view=close_view)
         await interaction.response.send_message(f"🎟️ Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
+
+class TicketView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Nyiss Ticketet", style=discord.ButtonStyle.green, custom_id="open_ticket")
+    async def open_ticket(self, interaction: discord.Interaction, button: Button):
+        modal = TicketModal(interaction.user)
+        await interaction.response.send_modal(modal)
 
 @bot.event
 async def on_ready():
@@ -55,7 +77,7 @@ async def on_ready():
     await bot.tree.sync(guild=guild)
     print("Bot ONLINE")
 
-@bot.tree.command(name="panel", description="Ticket nyitó panel küldése")
+@bot.tree.command(name="panel", description="Ticket nyitó panel")
 async def panel(interaction: discord.Interaction):
     view = TicketView()
     await interaction.response.send_message("Nyomd meg a gombot a ticket nyitásához!", view=view, ephemeral=False)
