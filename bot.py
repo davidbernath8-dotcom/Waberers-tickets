@@ -20,6 +20,7 @@ PING_ROLES = [
     1463252057635946578
 ]
 
+# --- Ticket Modal (nyitás) ---
 class TicketModal(Modal):
     def __init__(self, user: discord.Member):
         super().__init__(title="Nyiss egy ticketet")
@@ -45,13 +46,23 @@ class TicketModal(Modal):
         channel_name = f"ticket-{ticket_count}"
         ticket_channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
 
-        # Close gomb
+        # Close gomb  zárással
         close_view = View(timeout=None)
         close_button = Button(label="Close Ticket", style=discord.ButtonStyle.red)
 
         async def close_callback(close_interaction):
-            # Opció: modal kérdés záráskor
-            await ticket_channel.delete()
+            class CloseModal(Modal):
+                def __init__(self):
+                    super().__init__(title="Zárás oka")
+                    self.close_reason = TextInput(label="Miért zárja a ticketet?", style=discord.TextStyle.paragraph)
+                    self.add_item(self.close_reason)
+
+                async def on_submit(self, modal_interaction: discord.Interaction):
+                    await ticket_channel.send(f"🛑 Ticket zárva!\n**Ok:** {self.close_reason.value}")
+                    await ticket_channel.delete()
+                    await modal_interaction.response.send_message("Ticket törölve!", ephemeral=True)
+
+            await close_interaction.response.send_modal(CloseModal())
 
         close_button.callback = close_callback
         close_view.add_item(close_button)
@@ -61,6 +72,7 @@ class TicketModal(Modal):
         await ticket_channel.send(f"{ping_text}\n🎫 {self.user.mention} nyitott egy ticketet!\n**Ok:** {self.reason.value}", view=close_view)
         await interaction.response.send_message(f"🎟️ Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
 
+# --- Ticket nyitó panel ---
 class TicketView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -70,6 +82,7 @@ class TicketView(View):
         modal = TicketModal(interaction.user)
         await interaction.response.send_modal(modal)
 
+# --- Bot events ---
 @bot.event
 async def on_ready():
     guild = discord.Object(id=GUILD_ID)
@@ -77,6 +90,7 @@ async def on_ready():
     await bot.tree.sync(guild=guild)
     print("Bot ONLINE")
 
+# --- Panel parancs ---
 @bot.tree.command(name="panel", description="Ticket nyitó panel")
 async def panel(interaction: discord.Interaction):
     view = TicketView()
