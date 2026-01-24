@@ -8,10 +8,10 @@ intents.guilds = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-GUILD_ID = 123456789012345678  # szerver ID-d
-STAFF_ROLE_NAME = "Staff"      # staff role neve
+GUILD_ID = 1463251661421285388  # TE szervered ID-je
+STAFF_ROLE_NAME = "Staff"       # Staff role neve a szerveren
 
-ticket_count = 0  # egyszerű számláló (újraindításkor nullázódik)
+ticket_count = 0  # egyszerű számláló (szerver újraindításig él)
 
 @bot.event
 async def on_ready():
@@ -26,7 +26,7 @@ async def ticket(interaction: discord.Interaction):
     ticket_count += 1
     guild = interaction.guild
 
-    # Jogosultságok
+    # Jogosultságok beállítása
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
         interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
@@ -36,13 +36,16 @@ async def ticket(interaction: discord.Interaction):
     if staff_role:
         overwrites[staff_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
-    # Csatorna létrehozás
+    # Csatorna létrehozása
     channel_name = f"ticket-{ticket_count}"
     ticket_channel = await guild.create_text_channel(
         name=channel_name,
         overwrites=overwrites
     )
 
-    await interaction.response.send_message(f"🎟️ Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
+    await interaction.response.send_message(
+        f"🎟️ Ticket létrehozva: {ticket_channel.mention}",
+        ephemeral=True
+    )
 
 bot.run(os.getenv("TOKEN"))
