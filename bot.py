@@ -1,4 +1,4 @@
-import discord
+6 7import discord
 from discord.ext import commands
 from discord import app_commands
 from discord.ui import View, Button, Modal, TextInput
@@ -96,69 +96,77 @@ async def panel(interaction: discord.Interaction):
     view = TicketView()
     await interaction.response.send_message("Nyomd meg a gombot a ticket nyitásához!", view=view, ephemeral=False)
 # ------------------------
-# MOD parancsok
-# ------------------------
-@bot.tree.command(name="kick", description="Kickeld a felhasználót")
-@app_commands.describe(user="Kirúgandó user", reason="Indok")
-async def kick(interaction: discord.Interaction, user: discord.Member, reason: str = "Nincs megadva"):
-    if not is_staff(interaction):
-        return await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
-    await user.kick(reason=reason)
-    await interaction.response.send_message(f"👢 {user.mention} kickelve.\n**Ok:** {reason}")
+# ===== MOD PARANCSOK =====
 
-@bot.tree.command(name="ban", description="Bannold a felhasználót")
-@app_commands.describe(user="Kitiltható user", reason="Indok")
-async def ban(interaction: discord.Interaction, user: discord.Member, reason: str = "Nincs megadva"):
+STAFF_ROLE_IDS = [
+    1463254825256091761,
+    1463254505700462614,
+    1463252057635946578
+]
+
+def is_staff(interaction: discord.Interaction):
+    return any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles)
+
+# --- BAN ---
+@bot.tree.command(name="ban", description="Felhasználó kitiltása")
+@app_commands.describe(user="Felhasználó", reason="Indok")
+async def ban(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    reason: str = "Nincs megadva"
+):
     if not is_staff(interaction):
-        return await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
+        return await interaction.response.send_message("❌ Nincs jogod.", ephemeral=True)
+
     await user.ban(reason=reason)
     await interaction.response.send_message(f"🔨 {user.mention} bannolva.\n**Ok:** {reason}")
 
-@bot.tree.command(name="timeout", description="Timeout felhasználó")
-@app_commands.describe(user="User", minutes="Perc", reason="Indok")
-async def timeout(interaction: discord.Interaction, user: discord.Member, minutes: int, reason: str = "Nincs megadva"):
+# --- KICK ---
+@bot.tree.command(name="kick", description="Felhasználó kirúgása")
+@app_commands.describe(user="Felhasználó", reason="Indok")
+async def kick(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    reason: str = "Nincs megadva"
+):
     if not is_staff(interaction):
-        return await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
-    duration = datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes)
-    await user.timeout(duration, reason=reason)
-    await interaction.response.send_message(f"⏳ {user.mention} timeoutolva {minutes} percre.\n**Ok:** {reason}")
+        return await interaction.response.send_message("❌ Nincs jogod.", ephemeral=True)
 
+    await user.kick(reason=reason)
+    await interaction.response.send_message(f"👢 {user.mention} kickelve.\n**Ok:** {reason}")
+
+# --- TIMEOUT ---
+@bot.tree.command(name="timeout", description="Timeout adása")
+@app_commands.describe(minutes="Perc", reason="Indok")
+async def timeout(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    minutes: int,
+    reason: str = "Nincs megadva"
+):
+    if not is_staff(interaction):
+        return await interaction.response.send_message("❌ Nincs jogod.", ephemeral=True)
+
+    until = discord.utils.utcnow() + discord.timedelta(minutes=minutes)
+    await user.timeout(until, reason=reason)
+    await interaction.response.send_message(
+        f"⏳ {user.mention} timeoutolva {minutes} percre.\n**Ok:** {reason}"
+    )
+
+# --- UNTIMEOUT ---
 @bot.tree.command(name="untimeout", description="Timeout levétele")
-@app_commands.describe(user="User")
 async def untimeout(interaction: discord.Interaction, user: discord.Member):
     if not is_staff(interaction):
-        return await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
+        return await interaction.response.send_message("❌ Nincs jogod.", ephemeral=True)
+
     await user.timeout(None)
     await interaction.response.send_message(f"✅ {user.mention} timeout feloldva.")
 
-@bot.tree.command(name="afk", description="AFK mód bekapcsolása")
-@app_commands.describe(reason="Indok, miért AFK vagy")
-async def afk(interaction: discord.Interaction, reason: str = "Nincs megadva"):
+# --- AFK ---
+afk_users = {}
+
+@bot.tree.command(name="afk", description="AFK státusz beállítása")
+@app_commands.describe(reason="Miért vagy AFK")
+async def afk(interaction: discord.Interaction, reason: str = "AFK"):
     afk_users[interaction.user.id] = reason
-    await interaction.response.send_message(f"✅ {interaction.user.mention} AFK mód bekapcsolva.\n**Ok:** {reason}", ephemeral=True)
-
-# ------------------------
-# AFK figyelés
-# ------------------------
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    # AFK-ból visszatérés
-    if message.author.id in afk_users:
-        del afk_users[message.author.id]
-        await message.channel.send(f"✅ {message.author.mention}, visszatértél AFK-ból.")
-
-    # AFK ping figyelés
-    for user_id, reason in afk_users.items():
-        member = message.guild.get_member(user_id)
-        if member and member in message.mentions:
-            await message.channel.send(f"ℹ️ {message.author.mention}, {member.mention} AFK: {reason}")
-
-    await bot.process_commands(message)
-
-# ------------------------
-# Bot indítása
-# ------------------------
-bot.run(os.getenv("TOKEN"))
+    await interaction.response.send_message(f"💤 AFK mód bekapcsolva: **{reason}**", ephemeral=True)
