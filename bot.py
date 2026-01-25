@@ -186,9 +186,9 @@ await interaction.followup.send(
     f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
 )
 
-    await user.timeout(None)
-    await interaction.response.send_message(
-        f"✅ {user.mention} timeout feloldva."
+await user.timeout(None)
+await interaction.response.send_message(
+    f"✅ {user.mention} timeout feloldva."
     )
 
 # -------- AFK --------
