@@ -96,21 +96,27 @@ async def panel(interaction: discord.Interaction):
     view = TicketView()
     await interaction.response.send_message("Nyomd meg a gombot a ticket nyitásához!", view=view, ephemeral=False)
 # ------------------------
-# ===== MOD PARANCSOK =====
+# ===== MOD PARANCSOK ÉS AFK =====
 from datetime import timedelta
+import discord
+from discord.ext import commands
 from discord import app_commands
 
-# Staff role ID-k (ezek maradnak)
+# --- Staff rang ID-k ---
 STAFF_ROLE_IDS = [
     1463254825256091761,
     1463254505700462614,
     1463252057635946578
 ]
 
+# --- AFK dictionary ---
+afk_users = {}
+
+# --- Helper: staff check ---
 def is_staff(interaction: discord.Interaction) -> bool:
     return any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles)
 
-# -------- BAN --------
+# -------- /ban --------
 @bot.tree.command(name="ban", description="Felhasználó kitiltása")
 @app_commands.describe(user="Felhasználó", reason="Indok")
 async def ban(
@@ -127,7 +133,7 @@ async def ban(
         f"🔨 {user.mention} bannolva.\n**Ok:** {reason}"
     )
 
-# -------- KICK --------
+# -------- /kick --------
 @bot.tree.command(name="kick", description="Felhasználó kirúgása")
 @app_commands.describe(user="Felhasználó", reason="Indok")
 async def kick(
@@ -144,13 +150,9 @@ async def kick(
         f"👢 {user.mention} kickelve.\n**Ok:** {reason}"
     )
 
-# -------- TIMEOUT --------
+# -------- /timeout --------
 @bot.tree.command(name="timeout", description="Timeout adása")
-@app_commands.describe(
-    user="Felhasználó",
-    minutes="Perc",
-    reason="Indok"
-)
+@app_commands.describe(minutes="Perc", reason="Indok")
 async def timeout(
     interaction: discord.Interaction,
     user: discord.Member,
@@ -158,83 +160,60 @@ async def timeout(
     reason: str = "Nincs megadva"
 ):
     if not is_staff(interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
+        return
 
-await user.timeout(until, reason=reason)
+    until = discord.utils.utcnow() + timedelta(minutes=minutes)
+    await user.timeout(until, reason=reason)
 
-await interaction.followup.send(
-    f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
-)
+    await interaction.response.send_message(
+        f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
+    )
 
-until = discord.utils.utcnow() + timedelta(minutes=minutes)
-await user.timeout(until, reason=reason)
-
-await interaction.response.send_message(
-      f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
-)
-
-# -------- UNTIMEOUT --------
+# -------- /untimeout --------
 @bot.tree.command(name="untimeout", description="Timeout levétele")
 @app_commands.describe(user="Felhasználó")
 async def untimeout(interaction: discord.Interaction, user: discord.Member):
     if not is_staff(interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
+        return
 
-await user.timeout(until, reason=reason)
+    await user.timeout(None)
+    await interaction.response.send_message(f"✅ {user.mention} timeout feloldva.")
 
-await interaction.followup.send(
-    f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
-)
-
-await user.timeout(None)
-await interaction.response.send_message(
-    f"✅ {user.mention} timeout feloldva."
-    )
-
-# -------- AFK --------
-afk_users = {}
-
+# -------- /afk --------
 @bot.tree.command(name="afk", description="AFK státusz beállítása")
 @app_commands.describe(reason="AFK indok")
 async def afk(interaction: discord.Interaction, reason: str = "AFK"):
     afk_users[interaction.user.id] = reason
-    await interaction.response.send_message(
-        f"💤 AFK mód bekapcsolva: **{reason}**",
-        ephemeral=True
-    )
+    await interaction.response.send_message(f"💤 AFK mód bekapcsolva: **{reason}**", ephemeral=True)
+
+# -------- on_message: AFK vissza és ping --------
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # ✅ AFK levétele + visszatérés üzenet
+    # Ha az AFK user ír, töröljük az AFK státuszt
     if message.author.id in afk_users:
         del afk_users[message.author.id]
         await message.channel.send(
-            f"👋 {message.author.mention} örülünk, hogy itt vagy újra! 💚"
+            f"👋 {message.author.mention} örülünk, hogy itt vagy újra!"
         )
 
-    # 📣 AFK ping figyelés
+    # Ha AFK-s embert pingelnek
     for user in message.mentions:
         if user.id in afk_users:
             reason = afk_users[user.id]
-            await message.channel.send(
-                f"💭 **{user.display_name} AFK**\n📌 Ok: {reason}"
-            )
-GUILD_ID = 1463251661421285388  # a te szervered
+            await message.channel.send(f"💭 **{user.display_name} AFK**\n📌 Ok: {reason}")
 
+    await bot.process_commands(message)
+
+# -------- /ping --------
 @bot.tree.command(name="ping", description="Bot válaszideje")
 async def ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
-    await interaction.response.send_message(
-        f"🏓 Pong!\n⏱️ Késleltetés: **{latency} ms**",
-        ephemeral=True
-    )
-
-# On_ready
-@bot.event
-async def on_ready():
-    guild = discord.Object(id=GUILD_ID)
+    await interaction.response.send_message(f"🏓 Pong!\n⏱️ Késleltetés: **{latency} ms**", ephemeral=True)
     # szinkronizáljuk csak ezt a guild-et
     await bot.tree.sync(guild=guild)
     print(f"Bot ONLINE: {bot.user}")
