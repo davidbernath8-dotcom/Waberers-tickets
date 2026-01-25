@@ -221,13 +221,21 @@ async def on_message(message: discord.Message):
             await message.channel.send(
                 f"💭 **{user.display_name} AFK**\n📌 Ok: {reason}"
             )
+GUILD_ID = 1463251661421285388  # a te szervered
 
-    await bot.process_commands(message)
-    @bot.tree.command(name="ping", description="Bot válaszideje")
+@bot.tree.command(name="ping", description="Bot válaszideje")
 async def ping(interaction: discord.Interaction):
     latency = round(bot.latency * 1000)
     await interaction.response.send_message(
         f"🏓 Pong!\n⏱️ Késleltetés: **{latency} ms**",
         ephemeral=True
     )
+
+# On_ready
+@bot.event
+async def on_ready():
+    guild = discord.Object(id=GUILD_ID)
+    # szinkronizáljuk csak ezt a guild-et
+    await bot.tree.sync(guild=guild)
+    print(f"Bot ONLINE: {bot.user}")
 bot.run(os.getenv("TOKEN"))
