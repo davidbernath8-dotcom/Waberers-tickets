@@ -223,4 +223,11 @@ async def on_message(message: discord.Message):
             )
 
     await bot.process_commands(message)
+    @bot.tree.command(name="ping", description="Bot válaszideje")
+async def ping(interaction: discord.Interaction):
+    latency = round(bot.latency * 1000)
+    await interaction.response.send_message(
+        f"🏓 Pong!\n⏱️ Késleltetés: **{latency} ms**",
+        ephemeral=True
+    )
 bot.run(os.getenv("TOKEN"))
