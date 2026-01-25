@@ -12,7 +12,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 GUILD_ID = 1463251661421285388
 STAFF_ROLE_NAME = "Staff"
 ticket_count = 0
-
+@bot.event
+async def on_ready():
+    guild = discord.Object(id=GUILD_ID)
+    bot.tree.copy_global_to(guild=guild)   # Másold a global parancsokat a guildhez
+    await bot.tree.sync(guild=guild)       # Szinkronizáld a guild-et
+    print(f"Bot ONLINE: {bot.user}")
 # Pingelendő role ID-k
 PING_ROLES = [
     1463254825256091761,
