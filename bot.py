@@ -158,8 +158,13 @@ async def timeout(
     reason: str = "Nincs megadva"
 ):
     if not is_staff(interaction):
-        await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
-        return
+        await interaction.response.defer(ephemeral=True)
+
+await user.timeout(until, reason=reason)
+
+await interaction.followup.send(
+    f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
+)
 
     until = discord.utils.utcnow() + timedelta(minutes=minutes)
     await user.timeout(until, reason=reason)
@@ -173,8 +178,13 @@ async def timeout(
 @app_commands.describe(user="Felhasználó")
 async def untimeout(interaction: discord.Interaction, user: discord.Member):
     if not is_staff(interaction):
-        await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
-        return
+        await interaction.response.defer(ephemeral=True)
+
+await user.timeout(until, reason=reason)
+
+await interaction.followup.send(
+    f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
+)
 
     await user.timeout(None)
     await interaction.response.send_message(
