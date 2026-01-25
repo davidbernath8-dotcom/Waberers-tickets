@@ -191,8 +191,8 @@ async def afk(interaction: discord.Interaction, reason: str = "AFK"):
     await interaction.response.send_message(
         f"💤 AFK mód bekapcsolva: **{reason}**",
         ephemeral=True
-)
-    @bot.event
+    )
+@bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
