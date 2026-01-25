@@ -96,3 +96,4 @@ async def panel(interaction: discord.Interaction):
     view = TicketView()
     await interaction.response.send_message("Nyomd meg a gombot a ticket nyitásához!", view=view, ephemeral=False)
 # ------------------------
+bot.run(os.getenv("TOKEN"))
