@@ -3,110 +3,15 @@ from discord.ext import commands
 from discord import app_commands
 from discord.ui import View, Button, Modal, TextInput
 import os
+from datetime import timedelta
 
+# -------------------- INTENTS --------------------
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True
+intents.members = True  # szükséges kick/ban/timeout-hoz
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-GUILD_ID = 1463251661421285388
-STAFF_ROLE_NAME = "Staff"
-ticket_count = 0
-@bot.event
-async def on_ready():
-    guild = discord.Object(id=GUILD_ID)
-    bot.tree.copy_global_to(guild=guild)   # Másold a global parancsokat a guildhez
-    await bot.tree.sync(guild=guild)       # Szinkronizáld a guild-et
-    print(f"Bot ONLINE: {bot.user}")
-# Pingelendő role ID-k
-PING_ROLES = [
-    1463254825256091761,
-    1463254505700462614,
-    1463252057635946578
-]
-
-# --- Ticket Modal (nyitás) ---
-class TicketModal(Modal):
-    def __init__(self, user: discord.Member):
-        super().__init__(title="Nyiss egy ticketet")
-        self.user = user
-        self.reason = TextInput(label="Miért nyitsz ticketet?", style=discord.TextStyle.paragraph)
-        self.add_item(self.reason)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        global ticket_count
-        ticket_count += 1
-        guild = interaction.guild
-
-        # Jogosultságok
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        }
-
-        staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
-        if staff_role:
-            overwrites[staff_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-
-        channel_name = f"ticket-{ticket_count}"
-        ticket_channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
-
-        # Close gomb  zárással
-        close_view = View(timeout=None)
-        close_button = Button(label="Close Ticket", style=discord.ButtonStyle.red)
-
-        async def close_callback(close_interaction):
-            class CloseModal(Modal):
-                def __init__(self):
-                    super().__init__(title="Zárás oka")
-                    self.close_reason = TextInput(label="Miért zárja a ticketet?", style=discord.TextStyle.paragraph)
-                    self.add_item(self.close_reason)
-
-                async def on_submit(self, modal_interaction: discord.Interaction):
-                    await ticket_channel.send(f"🛑 Ticket zárva!\n**Ok:** {self.close_reason.value}")
-                    await ticket_channel.delete()
-                    await modal_interaction.response.send_message("Ticket törölve!", ephemeral=True)
-
-            await close_interaction.response.send_modal(CloseModal())
-
-        close_button.callback = close_callback
-        close_view.add_item(close_button)
-
-        # Ping a három rang
-        ping_text = " ".join([f"<@&{r}>" for r in PING_ROLES])
-        await ticket_channel.send(f"{ping_text}\n🎫 {self.user.mention} nyitott egy ticketet!\n**Ok:** {self.reason.value}", view=close_view)
-        await interaction.response.send_message(f"🎟️ Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
-
-# --- Ticket nyitó panel ---
-class TicketView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="Nyiss Ticketet", style=discord.ButtonStyle.green, custom_id="open_ticket")
-    async def open_ticket(self, interaction: discord.Interaction, button: Button):
-        modal = TicketModal(interaction.user)
-        await interaction.response.send_modal(modal)
-
-# --- Bot events ---
-@bot.event
-async def on_ready():
-    guild = discord.Object(id=GUILD_ID)
-    bot.tree.copy_global_to(guild=guild)
-    await bot.tree.sync(guild=guild)
-    print("Bot ONLINE")
-
-# --- Panel parancs ---
-@bot.tree.command(name="panel", description="Ticket nyitó panel")
-async def panel(interaction: discord.Interaction):
-    view = TicketView()
-    await interaction.response.send_message("Nyomd meg a gombot a ticket nyitásához!", view=view, ephemeral=False)
-# ------------------------
-# ===== MOD PARANCSOK ÉS AFK =====
-from datetime import timedelta
-import discord
-from discord.ext import commands
-from discord import app_commands
-
+# -------------------- GUILD + STAFF --------------------
 GUILD_ID = 1463251661421285388  # a szervered ID
 STAFF_ROLE_IDS = [
     1463254825256091761,
@@ -117,6 +22,40 @@ STAFF_ROLE_IDS = [
 def is_staff(interaction: discord.Interaction) -> bool:
     return any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles)
 
+# -------------------- AFK --------------------
+afk_users = {}
+
+@bot.tree.command(name="afk", description="AFK státusz beállítása")
+@app_commands.describe(reason="AFK indok")
+async def afk(interaction: discord.Interaction, reason: str = "AFK"):
+    afk_users[interaction.user.id] = reason
+    await interaction.response.send_message(f"💤 AFK mód bekapcsolva: **{reason}**", ephemeral=True)
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    # Ha AFK-ból visszatér
+    if message.author.id in afk_users:
+        del afk_users[message.author.id]
+        await message.channel.send(f"👋 {message.author.mention} örülünk, hogy itt vagy újra!")
+
+    # Ha AFK embert pingelnek
+    for user in message.mentions:
+        if user.id in afk_users:
+            reason = afk_users[user.id]
+            await message.channel.send(f"💭 **{user.display_name} AFK**\n📌 Ok: {reason}")
+
+    await bot.process_commands(message)
+
+# -------------------- PING --------------------
+@bot.tree.command(name="ping", description="Bot válaszideje")
+async def ping(interaction: discord.Interaction):
+    latency = round(bot.latency * 1000)
+    await interaction.response.send_message(f"🏓 Pong!\n⏱️ Késleltetés: **{latency} ms**", ephemeral=True)
+
+# -------------------- MOD PARANCSOK --------------------
 # -------- /ban --------
 @bot.tree.command(name="ban", description="Felhasználó kitiltása")
 @app_commands.describe(user="Felhasználó", reason="Indok")
@@ -158,52 +97,80 @@ async def untimeout(interaction: discord.Interaction, user: discord.Member):
     await user.timeout(None)
     await interaction.response.send_message(f"✅ {user.mention} timeout feloldva.")
 
-# --- Szinkronizáljuk a guild-et on_ready-ban ---
+# -------------------- TICKET PANEL ÉS MODAL --------------------
+ticket_count = 0
+STAFF_ROLE_NAME = "Staff"
+PING_ROLES = STAFF_ROLE_IDS  # a három rang pingelése ticketnél
+
+class TicketModal(Modal):
+    def __init__(self, user: discord.Member):
+        super().__init__(title="Nyiss egy ticketet")
+        self.user = user
+        self.reason = TextInput(label="Miért nyitsz ticketet?", style=discord.TextStyle.paragraph)
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        global ticket_count
+        ticket_count += 1
+        guild = interaction.guild
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(read_messages=False),
+            self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        }
+
+        staff_role = discord.utils.get(guild.roles, name=STAFF_ROLE_NAME)
+        if staff_role:
+            overwrites[staff_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
+        channel_name = f"ticket-{ticket_count}"
+        ticket_channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
+
+        close_view = View(timeout=None)
+        close_button = Button(label="Close Ticket", style=discord.ButtonStyle.red)
+
+        async def close_callback(close_interaction):
+            class CloseModal(Modal):
+                def __init__(self):
+                    super().__init__(title="Zárás oka")
+                    self.close_reason = TextInput(label="Miért zárja a ticketet?", style=discord.TextStyle.paragraph)
+                    self.add_item(self.close_reason)
+
+                async def on_submit(self, modal_interaction: discord.Interaction):
+                    await ticket_channel.send(f"🛑 Ticket zárva!\n**Ok:** {self.close_reason.value}")
+                    await ticket_channel.delete()
+                    await modal_interaction.response.send_message("Ticket törölve!", ephemeral=True)
+
+            await close_interaction.response.send_modal(CloseModal())
+
+        close_button.callback = close_callback
+        close_view.add_item(close_button)
+
+        ping_text = " ".join([f"<@&{r}>" for r in PING_ROLES])
+        await ticket_channel.send(f"{ping_text}\n🎫 {self.user.mention} nyitott egy ticketet!\n**Ok:** {self.reason.value}", view=close_view)
+        await interaction.response.send_message(f"🎟️ Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
+
+class TicketView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Nyiss Ticketet", style=discord.ButtonStyle.green, custom_id="open_ticket")
+    async def open_ticket(self, interaction: discord.Interaction, button: Button):
+        modal = TicketModal(interaction.user)
+        await interaction.response.send_modal(modal)
+
+@bot.tree.command(name="panel", description="Ticket nyitó panel")
+async def panel(interaction: discord.Interaction):
+    view = TicketView()
+    await interaction.response.send_message("Nyomd meg a gombot a ticket nyitásához!", view=view, ephemeral=False)
+
+# -------------------- BOT READY --------------------
 @bot.event
 async def on_ready():
     guild = discord.Object(id=GUILD_ID)
+    bot.tree.copy_global_to(guild=guild)
     await bot.tree.sync(guild=guild)
     print(f"Bot ONLINE: {bot.user}")
-# --- AFK dictionary ---
-afk_users = {}
 
-# --- Helper: staff check ---
-def is_staff(interaction: discord.Interaction) -> bool:
-    return any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles)
-# -------- /afk --------
-@bot.tree.command(name="afk", description="AFK státusz beállítása")
-@app_commands.describe(reason="AFK indok")
-async def afk(interaction: discord.Interaction, reason: str = "AFK"):
-    afk_users[interaction.user.id] = reason
-    await interaction.response.send_message(f"💤 AFK mód bekapcsolva: **{reason}**", ephemeral=True)
-
-# -------- on_message: AFK vissza és ping --------
-@bot.event
-async def on_message(message: discord.Message):
-    if message.author.bot:
-        return
-
-    # Ha az AFK user ír, töröljük az AFK státuszt
-    if message.author.id in afk_users:
-        del afk_users[message.author.id]
-        await message.channel.send(
-            f"👋 {message.author.mention} örülünk, hogy itt vagy újra!"
-        )
-
-    # Ha AFK-s embert pingelnek
-    for user in message.mentions:
-        if user.id in afk_users:
-            reason = afk_users[user.id]
-            await message.channel.send(f"💭 **{user.display_name} AFK**\n📌 Ok: {reason}")
-
-    await bot.process_commands(message)
-
-# -------- /ping --------
-@bot.tree.command(name="ping", description="Bot válaszideje")
-async def ping(interaction: discord.Interaction):
-    latency = round(bot.latency * 1000)
-    await interaction.response.send_message(f"🏓 Pong!\n⏱️ Késleltetés: **{latency} ms**", ephemeral=True)
-    # szinkronizáljuk csak ezt a guild-et
-    await bot.tree.sync(guild=guild)
-    print(f"Bot ONLINE: {bot.user}")
+# -------------------- RUN --------------------
 bot.run(os.getenv("TOKEN"))
