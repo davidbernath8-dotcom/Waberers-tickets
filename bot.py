@@ -5,13 +5,12 @@ from discord.ui import View, Button, Modal, TextInput
 import os
 
 intents = discord.Intents.default()
-intents.guilds = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 GUILD_ID = 1463251661421285388
-ticket_count = 0
 TICKET_LOG_CHANNEL_ID = None
+ticket_count = 0
 
 # Ticket típusok és pingelendő rangok
 TICKET_BUTTONS = {
@@ -24,7 +23,7 @@ TICKET_BUTTONS = {
 # -------------------- Ticket Modal --------------------
 class TicketModal(Modal):
     def __init__(self, user: discord.Member, button_name: str):
-        super().__init__(title=f"{button_name.replace('_',' ').title()} ticket")
+        super().__init__(title=f"{button_name.replace('_',' ').title()} Ticket")
         self.user = user
         self.button_name = button_name
         self.reason = TextInput(label="Miért nyitsz ticketet?", style=discord.TextStyle.paragraph)
@@ -35,7 +34,6 @@ class TicketModal(Modal):
         ticket_count += 1
         guild = interaction.guild
 
-        # Jogosultságok
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             self.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
@@ -50,32 +48,44 @@ class TicketModal(Modal):
         channel_name = f"{self.button_name}-{ticket_count}"
         ticket_channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
 
-        # Attribútumok a ticket csatornához
-        ticket_channel.creator = self.user
-        ticket_channel.ping_roles = role_ids
-        ticket_channel.claimed_by = None
+        # Ticket adatokat külön dict-ben tárolunk
+        bot.ticket_data[ticket_channel.id] = {
+            "creator": self.user,
+            "ping_roles": role_ids,
+            "claimed_by": None,
+            "type": self.button_name
+        }
 
         # Ticket log
-        log_channel = guild.get_channel(TICKET_LOG_CHANNEL_ID) if TICKET_LOG_CHANNEL_ID else None
-        if log_channel:
-            await log_channel.send(f"Ticket létrehozva: {ticket_channel.name}, nyitó: {self.user.mention}")
+        if TICKET_LOG_CHANNEL_ID:
+            log_channel = guild.get_channel(TICKET_LOG_CHANNEL_ID)
+            if log_channel:
+                await log_channel.send(f"Ticket létrehozva: {ticket_channel.name}, nyitó: {self.user.mention}")
 
         # Close gomb
         close_view = View(timeout=None)
         close_button = Button(label="Close Ticket", style=discord.ButtonStyle.red)
-
-        async def close_callback(close_interaction):
-            if log_channel:
-                await log_channel.send(f"Ticket {ticket_channel.name} zárva. Nyitó: {ticket_channel.creator.mention}, Claim: {getattr(ticket_channel,'claimed_by','nincs')}")
-            await ticket_channel.delete()
-            await close_interaction.response.send_message("Ticket törölve!", ephemeral=True)
-
-        close_button.callback = close_callback
+        close_button.callback = lambda inter: self.close_ticket(inter, ticket_channel)
         close_view.add_item(close_button)
 
+        # Ping
         ping_text = " ".join([f"<@&{r}>" for r in role_ids])
         await ticket_channel.send(f"{ping_text}\n🎫 {self.user.mention} nyitott egy ticketet!\n**Ok:** {self.reason.value}", view=close_view)
         await interaction.response.send_message(f"🎟️ Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
+
+    async def close_ticket(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        ticket_info = bot.ticket_data.get(channel.id)
+        if not ticket_info:
+            await interaction.response.send_message("❌ Ez nem ticket csatorna!", ephemeral=True)
+            return
+        # Log
+        if TICKET_LOG_CHANNEL_ID:
+            log_channel = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID)
+            if log_channel:
+                await log_channel.send(f"Ticket {channel.name} zárva. Nyitó: {ticket_info['creator'].mention}, Claim: {ticket_info['claimed_by'].mention if ticket_info['claimed_by'] else 'nincs'}")
+        await channel.delete()
+        bot.ticket_data.pop(channel.id, None)
+        await interaction.response.send_message("Ticket törölve!", ephemeral=True)
 
 # -------------------- Ticket Panel --------------------
 class TicketView(View):
@@ -105,30 +115,34 @@ async def panel(interaction: discord.Interaction):
 # -------------------- /claim --------------------
 @bot.tree.command(name="claim", description="Claimeld a ticketet")
 async def claim(interaction: discord.Interaction):
-    channel = interaction.channel
-    if not hasattr(channel, "creator"):
+    channel_id = interaction.channel.id
+    ticket_info = bot.ticket_data.get(channel_id)
+    if not ticket_info:
         await interaction.response.send_message("❌ Ez nem ticket csatorna!", ephemeral=True)
         return
-    if channel.claimed_by:
-        await interaction.response.send_message(f"⚠️ Már claimelve: {channel.claimed_by.mention}", ephemeral=True)
+    if ticket_info["claimed_by"]:
+        await interaction.response.send_message(f"⚠️ Már claimelve: {ticket_info['claimed_by'].mention}", ephemeral=True)
         return
-    channel.claimed_by = interaction.user
+    ticket_info["claimed_by"] = interaction.user
     await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet!", ephemeral=True)
 
 # -------------------- /close --------------------
 @bot.tree.command(name="close", description="Bezárja a ticketet")
 async def close(interaction: discord.Interaction):
-    channel = interaction.channel
-    if not hasattr(channel, "creator"):
+    channel_id = interaction.channel.id
+    ticket_info = bot.ticket_data.get(channel_id)
+    if not ticket_info:
         await interaction.response.send_message("❌ Ez nem ticket csatorna!", ephemeral=True)
         return
-    if interaction.user != channel.creator and getattr(channel,"claimed_by",None) != interaction.user:
+    if interaction.user != ticket_info["creator"] and interaction.user != ticket_info.get("claimed_by"):
         await interaction.response.send_message("❌ Csak a nyitó vagy claimelő zárhatja!", ephemeral=True)
         return
-    log_channel = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID) if TICKET_LOG_CHANNEL_ID else None
-    if log_channel:
-        await log_channel.send(f"Ticket {channel.name} zárva. Nyitó: {channel.creator.mention}, Claim: {getattr(channel,'claimed_by','nincs')}")
-    await channel.delete()
+    if TICKET_LOG_CHANNEL_ID:
+        log_channel = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID)
+        if log_channel:
+            await log_channel.send(f"Ticket {interaction.channel.name} zárva. Nyitó: {ticket_info['creator'].mention}, Claim: {ticket_info['claimed_by'].mention if ticket_info['claimed_by'] else 'nincs'}")
+    await interaction.channel.delete()
+    bot.ticket_data.pop(channel_id, None)
 
 # -------------------- /setlog --------------------
 @bot.tree.command(name="setlog", description="Állítsd be a ticket log csatornát")
@@ -144,21 +158,38 @@ async def setlog(interaction: discord.Interaction, channel: discord.TextChannel)
 
 # -------------------- Bot ready --------------------
 @bot.event
-async def on_ready():
+async <@&1464689743731228867> on_ready():
+    bot.ticket_data = {}  # csatorna adatok
     guild = discord.Object(id=GUILD_ID)
     bot.tree.copy_global_to(guild=guild)
     await bot.tree.sync(guild=guild)
     print(f"Bot ONLINE: {bot.user}")
 
-bot.run(os.getenv("TOKEN"))    if channel.claimed_by:
-        await interaction.response.send_message(f"⚠️ Már claimelve: {channel.claimed_by.mention}", ephemeral=True)
-        return
-    channel.claimed_by = interaction.user
-    await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet!", ephemeral=True)
+bot.run(os.getenv("TOKEN"))import discord
+from discord.ext import commands
+from discord import app_commands
+from discord.ui import View, Button, Modal, TextInput
+import os
 
-# -------------------- /close --------------------
-@bot.tree.command(name="close", description="Bezárja a ticketet")
-async def close(interaction: discord.Interaction):
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+GUILD_ID = 1463251661421285388
+ticket_count = 0
+TICKET_LOG_CHANNEL_ID = None
+
+# Ticket típusok és pingelendő rangok
+TICKET_BUTTONS = {
+    "panasz": [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867],
+    "rang_igenylo": [1463252057635946578],
+    "uzemanyag_igenylo": [1463254825256091761, 1463254505700462614, 1463252057635946578],
+    "altalanos_segitseg": [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867]
+}
+
+# -------------------- Ticket Modal --------------------
+class TicketModal(Modal):
     channel = interaction.channel
     if not hasattr(channel, "creator"):
         await interaction.response.send_message("❌ Ez nem ticket csatorna!", ephemeral=True)
