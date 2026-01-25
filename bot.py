@@ -192,5 +192,25 @@ async def afk(interaction: discord.Interaction, reason: str = "AFK"):
         f"💤 AFK mód bekapcsolva: **{reason}**",
         ephemeral=True
 )
-    
+    @bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
+        return
+
+    # ✅ AFK levétele + visszatérés üzenet
+    if message.author.id in afk_users:
+        del afk_users[message.author.id]
+        await message.channel.send(
+            f"👋 {message.author.mention} örülünk, hogy itt vagy újra! 💚"
+        )
+
+    # 📣 AFK ping figyelés
+    for user in message.mentions:
+        if user.id in afk_users:
+            reason = afk_users[user.id]
+            await message.channel.send(
+                f"💭 **{user.display_name} AFK**\n📌 Ok: {reason}"
+            )
+
+    await bot.process_commands(message)
 bot.run(os.getenv("TOKEN"))
