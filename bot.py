@@ -102,73 +102,46 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-# --- Staff rang ID-k ---
+GUILD_ID = 1463251661421285388  # a szervered ID
 STAFF_ROLE_IDS = [
     1463254825256091761,
     1463254505700462614,
     1463252057635946578
 ]
 
-# --- AFK dictionary ---
-afk_users = {}
-
-# --- Helper: staff check ---
 def is_staff(interaction: discord.Interaction) -> bool:
     return any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles)
 
 # -------- /ban --------
 @bot.tree.command(name="ban", description="Felhasználó kitiltása")
 @app_commands.describe(user="Felhasználó", reason="Indok")
-async def ban(
-    interaction: discord.Interaction,
-    user: discord.Member,
-    reason: str = "Nincs megadva"
-):
+async def ban(interaction: discord.Interaction, user: discord.Member, reason: str = "Nincs megadva"):
     if not is_staff(interaction):
         await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
         return
-
     await user.ban(reason=reason)
-    await interaction.response.send_message(
-        f"🔨 {user.mention} bannolva.\n**Ok:** {reason}"
-    )
+    await interaction.response.send_message(f"🔨 {user.mention} bannolva.\n**Ok:** {reason}")
 
 # -------- /kick --------
 @bot.tree.command(name="kick", description="Felhasználó kirúgása")
 @app_commands.describe(user="Felhasználó", reason="Indok")
-async def kick(
-    interaction: discord.Interaction,
-    user: discord.Member,
-    reason: str = "Nincs megadva"
-):
+async def kick(interaction: discord.Interaction, user: discord.Member, reason: str = "Nincs megadva"):
     if not is_staff(interaction):
         await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
         return
-
     await user.kick(reason=reason)
-    await interaction.response.send_message(
-        f"👢 {user.mention} kickelve.\n**Ok:** {reason}"
-    )
+    await interaction.response.send_message(f"👢 {user.mention} kickelve.\n**Ok:** {reason}")
 
 # -------- /timeout --------
 @bot.tree.command(name="timeout", description="Timeout adása")
-@app_commands.describe(minutes="Perc", reason="Indok")
-async def timeout(
-    interaction: discord.Interaction,
-    user: discord.Member,
-    minutes: int,
-    reason: str = "Nincs megadva"
-):
+@app_commands.describe(user="Felhasználó", minutes="Perc", reason="Indok")
+async def timeout(interaction: discord.Interaction, user: discord.Member, minutes: int, reason: str = "Nincs megadva"):
     if not is_staff(interaction):
         await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
         return
-
     until = discord.utils.utcnow() + timedelta(minutes=minutes)
     await user.timeout(until, reason=reason)
-
-    await interaction.response.send_message(
-        f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
-    )
+    await interaction.response.send_message(f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}")
 
 # -------- /untimeout --------
 @bot.tree.command(name="untimeout", description="Timeout levétele")
@@ -177,10 +150,21 @@ async def untimeout(interaction: discord.Interaction, user: discord.Member):
     if not is_staff(interaction):
         await interaction.response.send_message("❌ Nincs jogosultságod.", ephemeral=True)
         return
-
     await user.timeout(None)
     await interaction.response.send_message(f"✅ {user.mention} timeout feloldva.")
 
+# --- Szinkronizáljuk a guild-et on_ready-ban ---
+@bot.event
+async def on_ready():
+    guild = discord.Object(id=GUILD_ID)
+    await bot.tree.sync(guild=guild)
+    print(f"Bot ONLINE: {bot.user}")
+# --- AFK dictionary ---
+afk_users = {}
+
+# --- Helper: staff check ---
+def is_staff(interaction: discord.Interaction) -> bool:
+    return any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles)
 # -------- /afk --------
 @bot.tree.command(name="afk", description="AFK státusz beállítása")
 @app_commands.describe(reason="AFK indok")
