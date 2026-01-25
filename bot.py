@@ -18,6 +18,7 @@ TICKET_BUTTONS = {
     "rang_igenylo": [1463252057635946578],
     "uzemanyag_igenylo": [1463254825256091761, 1463254505700462614, 1463252057635946578],
     "altalanos_segitseg": [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867]
+    "Szexmaci_igénylés": [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867],
 }
 
 # -------------------- Ticket Modal --------------------
@@ -95,6 +96,7 @@ class TicketView(View):
         self.add_item(Button(label="Rang igénylő", style=discord.ButtonStyle.blurple, custom_id="rang_igenylo", row=1))
         self.add_item(Button(label="Üzemanyag igénylő", style=discord.ButtonStyle.green, custom_id="uzemanyag_igenylo", row=2))
         self.add_item(Button(label="Általános segítség", style=discord.ButtonStyle.gray, custom_id="altalanos_segitseg", row=3))
+        self.add_item(Button(label="Szexmaci Igénylés", style=discord.ButtonStyle.orange, custom_id="Szexmaci_igénylés", row=4))
 
 # -------------------- Gomb callback --------------------
 @bot.event
