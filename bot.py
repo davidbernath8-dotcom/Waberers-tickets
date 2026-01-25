@@ -166,12 +166,12 @@ await interaction.followup.send(
     f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
 )
 
-    until = discord.utils.utcnow() + timedelta(minutes=minutes)
-    await user.timeout(until, reason=reason)
+until = discord.utils.utcnow() + timedelta(minutes=minutes)
+await user.timeout(until, reason=reason)
 
-    await interaction.response.send_message(
-        f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
-    )
+await interaction.response.send_message(
+      f"⏳ {user.mention} timeoutolva **{minutes} percre**.\n**Ok:** {reason}"
+)
 
 # -------- UNTIMEOUT --------
 @bot.tree.command(name="untimeout", description="Timeout levétele")
