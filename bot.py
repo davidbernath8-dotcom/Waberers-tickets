@@ -48,7 +48,7 @@ class TicketModal(Modal):
         channel_name = f"{self.button_name}-{ticket_count}"
         ticket_channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
 
-        # Ticket adatokat külön dict-ben tárolunk
+        # Ticket adatokat dict-ben tároljuk
         bot.ticket_data[ticket_channel.id] = {
             "creator": self.user,
             "ping_roles": role_ids,
@@ -68,7 +68,7 @@ class TicketModal(Modal):
         close_button.callback = lambda inter: self.close_ticket(inter, ticket_channel)
         close_view.add_item(close_button)
 
-        # Ping
+        # Ping szöveg üzenetben
         ping_text = " ".join([f"<@&{r}>" for r in role_ids])
         await ticket_channel.send(f"{ping_text}\n🎫 {self.user.mention} nyitott egy ticketet!\n**Ok:** {self.reason.value}", view=close_view)
         await interaction.response.send_message(f"🎟️ Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
@@ -148,117 +148,18 @@ async def close(interaction: discord.Interaction):
 @bot.tree.command(name="setlog", description="Állítsd be a ticket log csatornát")
 @app_commands.describe(channel="A csatorna, ahova a ticket log megy")
 async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
-    global TICKET_LOG_CHANNEL_ID
     STAFF_ROLE_IDS = [1463254825256091761,1463254505700462614,1463252057635946578,1464689743731228867]
     if not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
         await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
         return
+    global TICKET_LOG_CHANNEL_ID
     TICKET_LOG_CHANNEL_ID = channel.id
     await interaction.response.send_message(f"✅ Ticket log csatorna beállítva: {channel.mention}", ephemeral=True)
 
 # -------------------- Bot ready --------------------
 @bot.event
-async <@&1464689743731228867> on_ready():
+async def on_ready():
     bot.ticket_data = {}  # csatorna adatok
-    guild = discord.Object(id=GUILD_ID)
-    bot.tree.copy_global_to(guild=guild)
-    await bot.tree.sync(guild=guild)
-    print(f"Bot ONLINE: {bot.user}")
-
-bot.run(os.getenv("TOKEN"))import discord
-from discord.ext import commands
-from discord import app_commands
-from discord.ui import View, Button, Modal, TextInput
-import os
-
-intents = discord.Intents.default()
-intents.guilds = True
-intents.members = True
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-GUILD_ID = 1463251661421285388
-ticket_count = 0
-TICKET_LOG_CHANNEL_ID = None
-
-# Ticket típusok és pingelendő rangok
-TICKET_BUTTONS = {
-    "panasz": [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867],
-    "rang_igenylo": [1463252057635946578],
-    "uzemanyag_igenylo": [1463254825256091761, 1463254505700462614, 1463252057635946578],
-    "altalanos_segitseg": [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867]
-}
-
-# -------------------- Ticket Modal --------------------
-class TicketModal(Modal):
-    channel = interaction.channel
-    if not hasattr(channel, "creator"):
-        await interaction.response.send_message("❌ Ez nem ticket csatorna!", ephemeral=True)
-        return
-    if interaction.user != channel.creator and getattr(channel,"claimed_by",None) != interaction.user:
-        await interaction.response.send_message("❌ Csak a nyitó vagy claimelő zárhatja!", ephemeral=True)
-        return
-    log_channel = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID) if TICKET_LOG_CHANNEL_ID else None
-    if log_channel:
-        await log_channel.send(f"Ticket {channel.name} zárva. Nyitó: {channel.creator.mention}, Claim: {getattr(channel,'claimed_by','nincs')}")
-    await channel.delete()
-
-# -------------------- /setlog --------------------
-@bot.tree.command(name="setlog", description="Állítsd be a ticket log csatornát")
-@app_commands.describe(channel="A csatorna, ahova a ticket log megy")
-async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
-    global TICKET_LOG_CHANNEL_ID
-    STAFF_ROLE_IDS = [1463254825256091761,1463254505700462614,1463252057635946578,1464689743731228867]
-    if not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
-        await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-        return
-    TICKET_LOG_CHANNEL_ID = channel.id
-    await interaction.response.send_message(f"✅ Ticket log csatorna beállítva: {channel.mention}", ephemeral=True)
-
-# -------------------- Bot ready --------------------
-@bot.event
-async def on_ready():
-    guild = discord.Object(id=GUILD_ID)
-    bot.tree.copy_global_to(guild=guild)
-    await bot.tree.sync(guild=guild)
-    print(f"Bot ONLINE: {bot.user}")
-
-bot.run(os.getenv("TOKEN"))    if channel.claimed_by:
-        await interaction.response.send_message(f"⚠️ Már claimelve: {channel.claimed_by.mention}", ephemeral=True)
-        return
-    channel.claimed_by = interaction.user
-    await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet!", ephemeral=True)
-
-# -------------------- /close --------------------
-@bot.tree.command(name="close", description="Bezárja a ticketet")
-async def close(interaction: discord.Interaction):
-    channel = interaction.channel
-    if not hasattr(channel, "creator"):
-        await interaction.response.send_message("❌ Ez nem ticket csatorna!", ephemeral=True)
-        return
-    if interaction.user != channel.creator and getattr(channel,"claimed_by",None) != interaction.user:
-        await interaction.response.send_message("❌ Csak a nyitó vagy claimelő zárhatja!", ephemeral=True)
-        return
-    log_channel = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID) if TICKET_LOG_CHANNEL_ID else None
-    if log_channel:
-        await log_channel.send(f"Ticket {channel.name} zárva. Nyitó: {channel.creator.mention}, Claim: {getattr(channel,'claimed_by','nincs')}")
-    await channel.delete()
-
-# -------------------- /setlog --------------------
-@bot.tree.command(name="setlog", description="Állítsd be a ticket log csatornát")
-@app_commands.describe(channel="A csatorna, ahova a ticket log megy")
-async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
-    global TICKET_LOG_CHANNEL_ID
-    # Csak Staff ranggal lehet
-    STAFF_ROLE_IDS = [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867]
-    if not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
-        await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
-        return
-    TICKET_LOG_CHANNEL_ID = channel.id
-    await interaction.response.send_message(f"✅ Ticket log csatorna beállítva: {channel.mention}", ephemeral=True)
-
-# -------------------- READY --------------------
-@bot.event
-async def on_ready():
     guild = discord.Object(id=GUILD_ID)
     bot.tree.copy_global_to(guild=guild)
     await bot.tree.sync(guild=guild)
