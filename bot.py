@@ -176,6 +176,47 @@ async def close(interaction: discord.Interaction):
 @app_commands.describe(channel="A csatorna, ahova a ticket log megy")
 async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
     global TICKET_LOG_CHANNEL_ID
+    STAFF_ROLE_IDS = [1463254825256091761,1463254505700462614,1463252057635946578,1464689743731228867]
+    if not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
+        await interaction.response.send_message("❌ Nincs jogosultságod!", ephemeral=True)
+        return
+    TICKET_LOG_CHANNEL_ID = channel.id
+    await interaction.response.send_message(f"✅ Ticket log csatorna beállítva: {channel.mention}", ephemeral=True)
+
+# -------------------- Bot ready --------------------
+@bot.event
+async def on_ready():
+    guild = discord.Object(id=GUILD_ID)
+    bot.tree.copy_global_to(guild=guild)
+    await bot.tree.sync(guild=guild)
+    print(f"Bot ONLINE: {bot.user}")
+
+bot.run(os.getenv("TOKEN"))    if channel.claimed_by:
+        await interaction.response.send_message(f"⚠️ Már claimelve: {channel.claimed_by.mention}", ephemeral=True)
+        return
+    channel.claimed_by = interaction.user
+    await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet!", ephemeral=True)
+
+# -------------------- /close --------------------
+@bot.tree.command(name="close", description="Bezárja a ticketet")
+async def close(interaction: discord.Interaction):
+    channel = interaction.channel
+    if not hasattr(channel, "creator"):
+        await interaction.response.send_message("❌ Ez nem ticket csatorna!", ephemeral=True)
+        return
+    if interaction.user != channel.creator and getattr(channel,"claimed_by",None) != interaction.user:
+        await interaction.response.send_message("❌ Csak a nyitó vagy claimelő zárhatja!", ephemeral=True)
+        return
+    log_channel = interaction.guild.get_channel(TICKET_LOG_CHANNEL_ID) if TICKET_LOG_CHANNEL_ID else None
+    if log_channel:
+        await log_channel.send(f"Ticket {channel.name} zárva. Nyitó: {channel.creator.mention}, Claim: {getattr(channel,'claimed_by','nincs')}")
+    await channel.delete()
+
+# -------------------- /setlog --------------------
+@bot.tree.command(name="setlog", description="Állítsd be a ticket log csatornát")
+@app_commands.describe(channel="A csatorna, ahova a ticket log megy")
+async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
+    global TICKET_LOG_CHANNEL_ID
     # Csak Staff ranggal lehet
     STAFF_ROLE_IDS = [1463254825256091761, 1463254505700462614, 1463252057635946578, 1464689743731228867]
     if not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
