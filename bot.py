@@ -29,7 +29,8 @@ def get_guild_conf(guild_id: int):
             "counter": 0,
             "types": {},
             "log_channel_id": None,
-            "claims": {}
+            "claims": {},
+            "open_tickets": {}  # channel.id: ticket_type
         }
         save_config(config)
     return config[gid]
@@ -66,7 +67,6 @@ class TicketModal(Modal):
         conf = get_guild_conf(guild.id)
         conf["counter"] += 1
         counter = conf["counter"]
-        save_config(config)
 
         data = conf["types"].get(self.ticket_type)
         if not data:
@@ -86,6 +86,10 @@ class TicketModal(Modal):
 
         channel_name = f"{self.ticket_type}-{counter}".replace(" ", "-").lower()
         channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
+
+        # Mentés ID alapján
+        conf["open_tickets"][str(channel.id)] = self.ticket_type
+        save_config(config)
 
         await channel.send(f"{' '.join(mentions)}\n🎫 {interaction.user.mention} nyitott egy ticketet\n**Ok:** {self.indok.value}")
 
@@ -154,40 +158,40 @@ async def ticket_logchannel(interaction: discord.Interaction, channel: discord.T
 
 @bot.tree.command(name="ticket_claim", description="Claimeld a ticketet")
 async def ticket_claim(interaction: discord.Interaction):
-    channel = interaction.channel
+    channel_id = str(interaction.channel.id)
     conf = get_guild_conf(interaction.guild.id)
-    ticket_types_lower = [t.lower() for t in conf["types"].keys()]
-    if not any(channel.name.lower().startswith(t) for t in ticket_types_lower):
+    if channel_id not in conf.get("open_tickets", {}):
         await interaction.response.send_message("❌ Ez nem ticket csatorna.", ephemeral=True)
         return
 
-    conf["claims"][str(channel.id)] = interaction.user.id
+    conf["claims"][channel_id] = interaction.user.id
     save_config(config)
     await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet.")
 
 @bot.tree.command(name="ticket_close", description="Bezárja a ticketet")
 async def ticket_close(interaction: discord.Interaction):
-    channel = interaction.channel
+    channel_id = str(interaction.channel.id)
     conf = get_guild_conf(interaction.guild.id)
-    ticket_types_lower = [t.lower() for t in conf["types"].keys()]
-    if not any(channel.name.lower().startswith(t) for t in ticket_types_lower):
+    ticket_type = conf.get("open_tickets", {}).get(channel_id)
+    if not ticket_type:
         await interaction.response.send_message("❌ Ez nem ticket csatorna.", ephemeral=True)
         return
 
     log_id = conf.get("log_channel_id")
-    claimed_user_id = conf["claims"].get(str(channel.id))
+    claimed_user_id = conf["claims"].get(channel_id)
     claimed_user = interaction.guild.get_member(claimed_user_id) if claimed_user_id else None
     if log_id:
         log_ch = interaction.guild.get_channel(log_id)
-        msg = f"✅ Ticket lezárva: {channel.mention}"
+        msg = f"✅ Ticket lezárva: {interaction.channel.mention}"
         if claimed_user:
             msg += f" | Claimelve: {claimed_user.mention}"
         if log_ch:
             await log_ch.send(msg)
 
-    conf["claims"].pop(str(channel.id), None)
+    conf["open_tickets"].pop(channel_id)
+    conf["claims"].pop(channel_id, None)
     save_config(config)
-    await channel.delete()
+    await interaction.channel.delete()
 
 # -------------------
 # READY
