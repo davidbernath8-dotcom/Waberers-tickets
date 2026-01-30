@@ -1,13 +1,22 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord.ui import View, Button, Modal, TextInput
+from discord.ui import View, Button
 import json
 import os
 
+# ================== ALAP ==================
+
+TOKEN = os.getenv("TOKEN")
 CONFIG_FILE = "ticket_config.json"
 
-# ================= CONFIG =================
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ================== CONFIG ==================
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -15,9 +24,9 @@ def load_config():
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_config(cfg):
+def save_config(data):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=4)
+        json.dump(data, f, indent=4)
 
 config = load_config()
 
@@ -25,24 +34,16 @@ def get_guild_conf(guild_id: int):
     gid = str(guild_id)
     if gid not in config:
         config[gid] = {
-            "counter": 0,
-            "types": {},          # ticket types
-            "log_channel_id": None,
-            "open_tickets": {},  # channel_id: type
-            "claims": {}         # channel_id: user_id
+            "ticket_types": {},
+            "open_tickets": {},
+            "log_channel": None
         }
         save_config(config)
     return config[gid]
 
-# ================= BOT =================
+# ================== SZÍNEK ==================
 
-intents = discord.Intents.default()
-intents.members = True
-intents.guilds = True
-
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-GOMB_SZINEK = {
+BUTTON_COLORS = {
     "kek": discord.ButtonStyle.primary,
     "zold": discord.ButtonStyle.success,
     "piros": discord.ButtonStyle.danger,
@@ -50,87 +51,92 @@ GOMB_SZINEK = {
     "narancs": discord.ButtonStyle.secondary
 }
 
-# ================= MODAL =================
-
-class TicketModal(Modal):
-    def __init__(self, ticket_type: str):
-        super().__init__(title=f"{ticket_type} ticket")
-        self.ticket_type = ticket_type
-        self.reason = TextInput(label="Miért nyitsz ticketet?", style=discord.TextStyle.paragraph)
-        self.add_item(self.reason)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        conf = get_guild_conf(guild.id)
-
-        conf["counter"] += 1
-        counter = conf["counter"]
-
-        data = conf["types"].get(self.ticket_type)
-        if not data:
-            await interaction.response.send_message("❌ Ticket típus nem létezik.", ephemeral=True)
-            return
-
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        }
-
-        mentions = []
-        for rid in data["roles"]:
-            role = guild.get_role(rid)
-            if role:
-                overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-                mentions.append(role.mention)
-
-        channel_name = f"{self.ticket_type}-{counter}".replace(" ", "-").lower()
-        channel = await guild.create_text_channel(name=channel_name, overwrites=overwrites)
-
-        conf["open_tickets"][str(channel.id)] = self.ticket_type
-        save_config(config)
-
-        await channel.send(
-            f"{' '.join(mentions)}\n🎫 {interaction.user.mention} ticketet nyitott\n**Ok:** {self.reason.value}"
-        )
-
-        log_id = conf.get("log_channel_id")
-        if log_id:
-            log_ch = guild.get_channel(log_id)
-            if log_ch:
-                await log_ch.send(
-                    f"🎫 Ticket nyitva | {channel.mention} | {interaction.user.mention} | típus: {self.ticket_type}"
-                )
-
-        await interaction.response.send_message(f"✅ Ticket létrehozva: {channel.mention}", ephemeral=True)
-
-# ================= PANEL =================
-
-class TicketButton(Button):
-    def __init__(self, name: str, style: discord.ButtonStyle):
-        super().__init__(label=name, style=style)
-        self.ticket_type = name
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(TicketModal(self.ticket_type))
+# ================== PANEL ==================
 
 class TicketPanel(View):
     def __init__(self, guild_id: int):
         super().__init__(timeout=None)
-        conf = get_guild_conf(guild_id)
-        for name, data in conf["types"].items():
-            style = GOMB_SZINEK.get(data.get("color", "kek"), discord.ButtonStyle.primary)
-            self.add_item(TicketButton(name, style))
+        self.guild_id = guild_id
+        self.build()
 
-# ================= COMMANDS =================
+    def build(self):
+        self.clear_items()
+        conf = get_guild_conf(self.guild_id)
 
-@bot.tree.command(name="panel", description="Ticket panel megjelenítése")
+        for name, data in conf["ticket_types"].items():
+            style = BUTTON_COLORS.get(data["color"], discord.ButtonStyle.primary)
+            button = Button(label=name, style=style)
+
+            async def callback(interaction: discord.Interaction, ticket_name=name):
+                await create_ticket(interaction, ticket_name)
+
+            button.callback = callback
+            self.add_item(button)
+
+# ================== TICKET CREATE ==================
+
+async def create_ticket(interaction: discord.Interaction, ticket_type: str):
+    conf = get_guild_conf(interaction.guild.id)
+
+    if ticket_type not in conf["ticket_types"]:
+        await interaction.response.send_message(
+            "❌ Ez a ticket típus már nem létezik.",
+            ephemeral=True
+        )
+        return
+
+    ticket_number = len(conf["open_tickets"]) + 1
+    channel_name = f"{ticket_type}-{ticket_number}".lower().replace(" ", "-")
+
+    overwrites = {
+        interaction.guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    }
+
+    for role_id in conf["ticket_types"][ticket_type]["roles"]:
+        role = interaction.guild.get_role(role_id)
+        if role:
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+    channel = await interaction.guild.create_text_channel(
+        channel_name,
+        overwrites=overwrites
+    )
+
+    conf["open_tickets"][str(channel.id)] = {
+        "type": ticket_type,
+        "owner": interaction.user.id,
+        "claimed_by": None
+    }
+    save_config(config)
+
+    pings = " ".join(f"<@&{r}>" for r in conf["ticket_types"][ticket_type]["roles"])
+    await channel.send(
+        f"{pings}\n🎫 Ticket nyitva: {interaction.user.mention}"
+    )
+
+    await interaction.response.send_message(
+        f"✅ Ticket létrehozva: {channel.mention}",
+        ephemeral=True
+    )
+
+# ================== SLASH PARANCSOK ==================
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Bot online | {bot.user}")
+
+# -------- PANEL --------
+@bot.tree.command(name="panel", description="Ticket panel küldése")
 async def panel(interaction: discord.Interaction):
     await interaction.response.send_message(
         "🎟 Válaszd ki a ticket típusát:",
         view=TicketPanel(interaction.guild.id)
     )
 
-@bot.tree.command(name="ticket_type", description="Új ticket típus létrehozása")
+# -------- TICKET TYPE ADD --------
+@bot.tree.command(name="ticket_type", description="Ticket típus létrehozása")
 @app_commands.checks.has_permissions(manage_guild=True)
 async def ticket_type(
     interaction: discord.Interaction,
@@ -142,12 +148,12 @@ async def ticket_type(
         role_ids = [int(r.strip()) for r in roles.split(",")]
     except ValueError:
         await interaction.response.send_message(
-            "❌ Hibás role ID formátum. Vesszővel elválasztott számokat adj meg.",
+            "❌ Hibás role ID formátum.",
             ephemeral=True
         )
         return
 
-    if color not in GOMB_SZINEK:
+    if color not in BUTTON_COLORS:
         await interaction.response.send_message(
             "❌ Színek: kek, zold, piros, szurke, narancs",
             ephemeral=True
@@ -155,7 +161,7 @@ async def ticket_type(
         return
 
     conf = get_guild_conf(interaction.guild.id)
-    conf["types"][name] = {
+    conf["ticket_types"][name] = {
         "roles": role_ids,
         "color": color
     }
@@ -166,57 +172,89 @@ async def ticket_type(
         ephemeral=True
     )
 
-@bot.tree.command(name="ticket_logchannel", description="Ticket log csatorna beállítása")
+# -------- TICKET TYPE DELETE --------
+@bot.tree.command(name="ticket_type_delete", description="Ticket típus törlése")
 @app_commands.checks.has_permissions(manage_guild=True)
-async def ticket_logchannel(interaction: discord.Interaction, channel: discord.TextChannel):
+async def ticket_type_delete(interaction: discord.Interaction, name: str):
     conf = get_guild_conf(interaction.guild.id)
-    conf["log_channel_id"] = channel.id
-    save_config(config)
-    await interaction.response.send_message(f"✅ Log csatorna: {channel.mention}")
 
+    if name not in conf["ticket_types"]:
+        await interaction.response.send_message(
+            f"❌ Nincs ilyen ticket típus: **{name}**",
+            ephemeral=True
+        )
+        return
+
+    conf["ticket_types"].pop(name)
+    save_config(config)
+
+    await interaction.response.send_message(
+        f"🗑 Ticket típus törölve: **{name}**",
+        ephemeral=True
+    )
+
+# -------- CLAIM --------
 @bot.tree.command(name="ticket_claim", description="Ticket claimelése")
 async def ticket_claim(interaction: discord.Interaction):
     conf = get_guild_conf(interaction.guild.id)
     cid = str(interaction.channel.id)
 
     if cid not in conf["open_tickets"]:
-        await interaction.response.send_message("❌ Ez nem ticket csatorna.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ Ez nem ticket csatorna.",
+            ephemeral=True
+        )
         return
 
-    conf["claims"][cid] = interaction.user.id
+    conf["open_tickets"][cid]["claimed_by"] = interaction.user.id
     save_config(config)
 
-    await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet.")
+    await interaction.response.send_message(
+        f"✅ Ticket claimelve: {interaction.user.mention}"
+    )
 
-@bot.tree.command(name="ticket_close", description="Ticket lezárása")
+# -------- CLOSE --------
+@bot.tree.command(name="ticket_close", description="Ticket bezárása")
 async def ticket_close(interaction: discord.Interaction):
     conf = get_guild_conf(interaction.guild.id)
     cid = str(interaction.channel.id)
 
     if cid not in conf["open_tickets"]:
-        await interaction.response.send_message("❌ Ez nem ticket csatorna.", ephemeral=True)
+        await interaction.response.send_message(
+            "❌ Ez nem ticket csatorna.",
+            ephemeral=True
+        )
         return
 
-    log_id = conf.get("log_channel_id")
+    log_id = conf.get("log_channel")
     if log_id:
         log_ch = interaction.guild.get_channel(log_id)
         if log_ch:
-            await log_ch.send(f"🔒 Ticket lezárva: {interaction.channel.name}")
+            await log_ch.send(
+                f"🗑 Ticket zárva: {interaction.channel.name}"
+            )
 
     conf["open_tickets"].pop(cid)
-    conf["claims"].pop(cid, None)
     save_config(config)
 
     await interaction.channel.delete()
 
-# ================= READY =================
+# -------- LOG CHANNEL --------
+@bot.tree.command(name="ticket_logchannel", description="Ticket log csatorna beállítása")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def ticket_logchannel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    conf = get_guild_conf(interaction.guild.id)
+    conf["log_channel"] = channel.id
+    save_config(config)
 
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"Bot ONLINE | {len(bot.guilds)} szerver")
+    await interaction.response.send_message(
+        f"✅ Log csatorna beállítva: {channel.mention}",
+        ephemeral=True
+    )
 
-# ================= RUN =================
+# ================== RUN ==================
 
-if __name__ == "__main__":
-    bot.run(os.getenv("TOKEN"))
+bot.run(TOKEN)
