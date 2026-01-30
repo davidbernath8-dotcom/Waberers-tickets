@@ -46,10 +46,10 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 GOMB_SZINEK = {
-    "kék": discord.ButtonStyle.primary,
-    "zöld": discord.ButtonStyle.success,
+    "kek": discord.ButtonStyle.primary,
+    "zold": discord.ButtonStyle.success,
     "piros": discord.ButtonStyle.danger,
-    "szürke": discord.ButtonStyle.secondary,
+    "szurke": discord.ButtonStyle.secondary,
     "narancs": discord.ButtonStyle.secondary
 }
 
@@ -174,35 +174,45 @@ async def ticket_logchannel(interaction: discord.Interaction, channel: discord.T
     save_config(config)
     await interaction.response.send_message(f"✅ Log csatorna beállítva: {channel.mention}")
 
+# -------------------
+# /ticket_claim
+# -------------------
 @bot.tree.command(name="ticket_claim", description="Claimeld a ticketet")
 async def ticket_claim(interaction: discord.Interaction):
     channel = interaction.channel
     conf = get_guild_conf(interaction.guild.id)
-    if not channel.name.startswith(tuple(conf["types"].keys())):
+    ticket_types_lower = [t.lower() for t in conf["types"].keys()]
+    if not any(channel.name.lower().startswith(t) for t in ticket_types_lower):
         await interaction.response.send_message("❌ Ez nem ticket csatorna.", ephemeral=True)
         return
+
     conf["claims"][str(channel.id)] = interaction.user.id
     save_config(config)
     await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet.")
 
+# -------------------
+# /ticket_close
+# -------------------
 @bot.tree.command(name="ticket_close", description="Bezárja a ticketet")
 async def ticket_close(interaction: discord.Interaction):
     channel = interaction.channel
     conf = get_guild_conf(interaction.guild.id)
-    if not channel.name.startswith(tuple(conf["types"].keys())):
+    ticket_types_lower = [t.lower() for t in conf["types"].keys()]
+    if not any(channel.name.lower().startswith(t) for t in ticket_types_lower):
         await interaction.response.send_message("❌ Ez nem ticket csatorna.", ephemeral=True)
         return
 
     # Log
     log_id = conf.get("log_channel_id")
+    claimed_user_id = conf["claims"].get(str(channel.id))
+    claimed_user = interaction.guild.get_member(claimed_user_id) if claimed_user_id else None
     if log_id:
         log_ch = interaction.guild.get_channel(log_id)
-        claimed_user_id = conf["claims"].get(str(channel.id))
-        claimed_user = interaction.guild.get_member(claimed_user_id) if claimed_user_id else None
         msg = f"✅ Ticket lezárva: {channel.mention}"
         if claimed_user:
             msg += f" | Claimelve: {claimed_user.mention}"
-        await log_ch.send(msg)
+        if log_ch:
+            await log_ch.send(msg)
 
     conf["claims"].pop(str(channel.id), None)
     save_config(config)
