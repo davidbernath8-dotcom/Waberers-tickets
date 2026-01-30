@@ -27,10 +27,10 @@ def get_guild_conf(guild_id: int):
     if gid not in config:
         config[gid] = {
             "counter": 0,
-            "types": {},
+            "types": {},          # Ticket típusok: roles + szín
             "log_channel_id": None,
-            "claims": {},
-            "open_tickets": {}  # channel.id: ticket_type
+            "claims": {},         # channel_id: user_id
+            "open_tickets": {}    # channel_id: ticket_type
         }
         save_config(config)
     return config[gid]
