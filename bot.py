@@ -7,7 +7,7 @@ import os
 
 CONFIG_FILE = "config.json"
 
-# ---------------- CONFIG ----------------
+# ================= CONFIG =================
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
@@ -15,9 +15,9 @@ def load_config():
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_config(data):
+def save_config(cfg):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+        json.dump(cfg, f, indent=4)
 
 config = load_config()
 
@@ -26,13 +26,12 @@ def get_guild_config(guild_id: int):
     if gid not in config:
         config[gid] = {
             "ticket_counter": 0,
-            "ticket_types": {},
-            "log_channel": None
+            "ticket_types": {}
         }
         save_config(config)
     return config[gid]
 
-# ---------------- BOT ----------------
+# ================= BOT =================
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -40,7 +39,7 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ---------------- COLORS ----------------
+# ================= BUTTON COLORS =================
 
 BUTTON_COLORS = {
     "blurple": discord.ButtonStyle.primary,
@@ -49,12 +48,13 @@ BUTTON_COLORS = {
     "grey": discord.ButtonStyle.secondary
 }
 
-# ---------------- MODAL ----------------
+# ================= MODAL =================
 
 class TicketModal(Modal):
     def __init__(self, ticket_type: str):
         super().__init__(title=f"{ticket_type} ticket")
         self.ticket_type = ticket_type
+
         self.reason = TextInput(
             label="Írd le a problémád",
             style=discord.TextStyle.paragraph,
@@ -101,7 +101,19 @@ class TicketModal(Modal):
             ephemeral=True
         )
 
-# ---------------- PANEL ----------------
+# ================= PANEL =================
+
+class TicketButton(Button):
+    def __init__(self, ticket_type: str, style: discord.ButtonStyle):
+        super().__init__(
+            label=ticket_type,
+            style=style,
+            custom_id=f"ticket_{ticket_type}"
+        )
+        self.ticket_type = ticket_type
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(TicketModal(self.ticket_type))
 
 class TicketPanel(View):
     def __init__(self, guild_id: int):
@@ -109,7 +121,97 @@ class TicketPanel(View):
         conf = get_guild_config(guild_id)
 
         for name, data in conf["ticket_types"].items():
-            style = BUTTON_COLORS.get(data.get("color", "blurple"))
+            color_name = data.get("color", "blurple")
+            style = BUTTON_COLORS.get(color_name, discord.ButtonStyle.primary)
+            self.add_item(TicketButton(name, style))
+
+# ================= COMMANDS =================
+
+@bot.tree.command(name="ticketpanel", description="Ticket panel küldése")
+async def ticketpanel(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "🎟️ Válaszd ki a ticket típusát:",
+        view=TicketPanel(interaction.guild.id)
+    )
+
+@bot.tree.command(name="addtickettype", description="Új ticket típus")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def addtickettype(
+    interaction: discord.Interaction,
+    name: str,
+    role: discord.Role
+):
+    conf = get_guild_config(interaction.guild.id)
+
+    conf["ticket_types"][name] = {
+        "roles": [role.id],
+        "color": "blurple"
+    }
+
+    save_config(config)
+
+    await interaction.response.send_message(
+        f"✅ Ticket típus létrehozva: **{name}**\nElső role: {role.mention}"
+    )
+
+@bot.tree.command(name="addticketrole", description="Role hozzáadása ticket típushoz")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def addticketrole(
+    interaction: discord.Interaction,
+    name: str,
+    role: discord.Role
+):
+    conf = get_guild_config(interaction.guild.id)
+
+    if name not in conf["ticket_types"]:
+        await interaction.response.send_message("❌ Nincs ilyen ticket típus.", ephemeral=True)
+        return
+
+    if role.id not in conf["ticket_types"][name]["roles"]:
+        conf["ticket_types"][name]["roles"].append(role.id)
+        save_config(config)
+
+    await interaction.response.send_message(
+        f"➕ {role.mention} hozzáadva **{name}** típushoz"
+    )
+
+@bot.tree.command(name="setticketcolor", description="Ticket gomb színének állítása")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def setticketcolor(
+    interaction: discord.Interaction,
+    name: str,
+    color: str
+):
+    if color not in BUTTON_COLORS:
+        await interaction.response.send_message(
+            "❌ Színek: blurple, green, red, grey",
+            ephemeral=True
+        )
+        return
+
+    conf = get_guild_config(interaction.guild.id)
+
+    if name not in conf["ticket_types"]:
+        await interaction.response.send_message("❌ Nincs ilyen ticket típus.", ephemeral=True)
+        return
+
+    conf["ticket_types"][name]["color"] = color
+    save_config(config)
+
+    await interaction.response.send_message(
+        f"🎨 **{name}** gomb színe beállítva: `{color}`"
+    )
+
+# ================= READY =================
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Bot ONLINE | {len(bot.guilds)} szerveren")
+
+# ================= RUN =================
+
+bot.run(os.getenv("TOKEN"))            style = BUTTON_COLORS.get(data.get("color", "blurple"))
             self.add_item(TicketButton(name, style))
 
 class TicketButton(Button):
