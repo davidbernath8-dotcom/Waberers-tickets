@@ -46,10 +46,10 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 GOMB_SZINEK = {
-    "kek": discord.ButtonStyle.primary,
-    "zold": discord.ButtonStyle.success,
+    "kék": discord.ButtonStyle.primary,
+    "zöld": discord.ButtonStyle.success,
     "piros": discord.ButtonStyle.danger,
-    "szurke": discord.ButtonStyle.secondary,
+    "szürke": discord.ButtonStyle.secondary,
     "narancs": discord.ButtonStyle.secondary
 }
 
@@ -129,50 +129,50 @@ class TicketPanel(View):
 async def ticket_panel(interaction: discord.Interaction):
     await interaction.response.send_message("🎟 Válaszd ki a ticket típusát:", view=TicketPanel(interaction.guild.id))
 
-@bot.tree.command(name="ticket_letrehoz", description="Új ticket típus létrehozása")
+@bot.tree.command(name="ticket_type", description="Új ticket típus létrehozása")
 @app_commands.checks.has_permissions(manage_guild=True)
-async def ticket_letrehoz(interaction: discord.Interaction, nev: str, role: discord.Role, szin: str = "kek"):
-    if szin not in GOMB_SZINEK:
+async def ticket_type(interaction: discord.Interaction, name: str, role: discord.Role, color: str = "kek"):
+    if color not in GOMB_SZINEK:
         await interaction.response.send_message("❌ Színek: kek, zold, piros, szurke, narancs", ephemeral=True)
         return
     conf = get_guild_conf(interaction.guild.id)
-    conf["types"][nev] = {"roles": [role.id], "color": szin}
+    conf["types"][name] = {"roles": [role.id], "color": color}
     save_config(config)
-    await interaction.response.send_message(f"✅ Ticket típus létrehozva: **{nev}** | Role: {role.mention} | Szín: {szin}")
+    await interaction.response.send_message(f"✅ Ticket típus létrehozva: **{name}** | Role: {role.mention} | Szín: {color}")
 
-@bot.tree.command(name="ticket_hozzad_role", description="Role hozzáadása ticket típushoz")
+@bot.tree.command(name="ticket_addrole", description="Role hozzáadása ticket típushoz")
 @app_commands.checks.has_permissions(manage_guild=True)
-async def ticket_hozzad_role(interaction: discord.Interaction, nev: str, role: discord.Role):
+async def ticket_addrole(interaction: discord.Interaction, name: str, role: discord.Role):
     conf = get_guild_conf(interaction.guild.id)
-    if nev not in conf["types"]:
+    if name not in conf["types"]:
         await interaction.response.send_message("❌ Nincs ilyen ticket típus.", ephemeral=True)
         return
-    if role.id not in conf["types"][nev]["roles"]:
-        conf["types"][nev]["roles"].append(role.id)
+    if role.id not in conf["types"][name]["roles"]:
+        conf["types"][name]["roles"].append(role.id)
         save_config(config)
-    await interaction.response.send_message(f"➕ {role.mention} hozzáadva **{nev}** tickethez")
+    await interaction.response.send_message(f"➕ {role.mention} hozzáadva **{name}** tickethez")
 
-@bot.tree.command(name="ticket_szin", description="Ticket gomb színének beállítása")
+@bot.tree.command(name="ticket_setcolor", description="Ticket gomb színének beállítása")
 @app_commands.checks.has_permissions(manage_guild=True)
-async def ticket_szin(interaction: discord.Interaction, nev: str, szin: str):
-    if szin not in GOMB_SZINEK:
+async def ticket_setcolor(interaction: discord.Interaction, name: str, color: str):
+    if color not in GOMB_SZINEK:
         await interaction.response.send_message("❌ Színek: kek, zold, piros, szurke, narancs", ephemeral=True)
         return
     conf = get_guild_conf(interaction.guild.id)
-    if nev not in conf["types"]:
+    if name not in conf["types"]:
         await interaction.response.send_message("❌ Nincs ilyen ticket típus.", ephemeral=True)
         return
-    conf["types"][nev]["color"] = szin
+    conf["types"][name]["color"] = color
     save_config(config)
-    await interaction.response.send_message(f"🎨 **{nev}** színe beállítva: `{szin}`")
+    await interaction.response.send_message(f"🎨 **{name}** színe beállítva: `{color}`")
 
-@bot.tree.command(name="ticket_log_csatorna", description="Ticket log csatorna beállítása")
+@bot.tree.command(name="ticket_logchannel", description="Ticket log csatorna beállítása")
 @app_commands.checks.has_permissions(manage_guild=True)
-async def ticket_log_csatorna(interaction: discord.Interaction, csatorna: discord.TextChannel):
+async def ticket_logchannel(interaction: discord.Interaction, channel: discord.TextChannel):
     conf = get_guild_conf(interaction.guild.id)
-    conf["log_channel_id"] = csatorna.id
+    conf["log_channel_id"] = channel.id
     save_config(config)
-    await interaction.response.send_message(f"✅ Log csatorna beállítva: {csatorna.mention}")
+    await interaction.response.send_message(f"✅ Log csatorna beállítva: {channel.mention}")
 
 @bot.tree.command(name="ticket_claim", description="Claimeld a ticketet")
 async def ticket_claim(interaction: discord.Interaction):
@@ -185,8 +185,8 @@ async def ticket_claim(interaction: discord.Interaction):
     save_config(config)
     await interaction.response.send_message(f"✅ {interaction.user.mention} claimelte a ticketet.")
 
-@bot.tree.command(name="ticket_zaras", description="Bezárja a ticketet")
-async def ticket_zaras(interaction: discord.Interaction):
+@bot.tree.command(name="ticket_close", description="Bezárja a ticketet")
+async def ticket_close(interaction: discord.Interaction):
     channel = interaction.channel
     conf = get_guild_conf(interaction.guild.id)
     if not channel.name.startswith(tuple(conf["types"].keys())):
