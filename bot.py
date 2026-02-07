@@ -188,4 +188,4 @@ async def on_ready():
     await bot.tree.sync()
     print(f"Bot online: {bot.user}")
 
-bot.run("TOKEN_IDE")
+bot.run(os.getenv("TOKEN"))
