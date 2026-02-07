@@ -85,16 +85,21 @@ class TicketModal(ui.Modal):
 
         await interaction.response.send_message(f"Ticket létrehozva: {ticket_channel.mention}", ephemeral=True)
 
+# ---------- Ticket Button ----------
+class TicketButton(ui.Button):
+    def __init__(self, ticket_type_name):
+        super().__init__(label=ticket_type_name, style=discord.ButtonStyle.primary, custom_id=f"ticket_{ticket_type_name}")
+
+    async def callback(self, interaction: discord.Interaction):
+        modal = TicketModal(self.custom_id.replace("ticket_", ""))
+        await interaction.response.send_modal(modal)
+
 # ---------- Ticket Panel ----------
 class TicketPanel(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         for tname in guild_conf.get("ticket_types", {}):
-            self.add_item(ui.Button(
-                label=tname,
-                style=discord.ButtonStyle.primary,
-                custom_id=f"ticket_{tname}"
-            ))
+            self.add_item(TicketButton(tname))
 
 # ---------- Ready ----------
 @bot.event
@@ -128,14 +133,7 @@ async def ticket_type_add(interaction: discord.Interaction, name: str, color: st
     question_list = [q.strip() for q in questions.split(",")] if questions else ["Írd le a problémát"]
     guild_conf["ticket_types"][name] = {"roles": role_ids, "color": color.lower(), "questions": question_list}
     save_config(guild_conf)
-
-    # Automatikusan küldjük a panelt
-    view = TicketPanel()
-    await interaction.response.send_message(
-        f"Ticket típus hozzáadva: {name}\nPanel frissítve, kattints a gombra a ticket létrehozásához.",
-        view=view,
-        ephemeral=False
-    )
+    await interaction.response.send_message(f"Ticket típus hozzáadva: {name}", ephemeral=True)
 
 @bot.tree.command(name="ticket_type_remove", description="Ticket típus törlése")
 @app_commands.describe(name="Ticket típusa")
@@ -176,16 +174,6 @@ async def ticket_close(interaction: discord.Interaction, reason: str):
             await log_channel.send(f"Ticket zárva: {interaction.channel.mention} Zárta: {interaction.user.mention} | Indok: {reason}")
 
     await interaction.channel.delete()
-
-# ---------- Button callback ----------
-@bot.event
-async def on_interaction(interaction: discord.Interaction):
-    if interaction.type == discord.InteractionType.component:
-        custom_id = interaction.data.get("custom_id")
-        if custom_id and custom_id.startswith("ticket_"):
-            ticket_type_name = custom_id.replace("ticket_", "")
-            modal = TicketModal(ticket_type_name)
-            await interaction.response.send_modal(modal)
 
 # ---------- Run ----------
 bot.run(os.getenv("TOKEN"))
