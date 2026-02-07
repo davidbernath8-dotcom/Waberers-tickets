@@ -23,7 +23,7 @@ COLOR_MAP = {
 
 def load_config():
     if not os.path.exists(CONFIG_FILE):
-        return {"ticket_types": {}, "counter": 1}
+        return {"ticket_types": {}, "counter": 1, "log_channel": None}
     with open(CONFIG_FILE, "r") as f:
         return json.load(f)
 
@@ -39,7 +39,6 @@ class TicketModal(ui.Modal):
         super().__init__(title=f"Ticket: {ticket_type_name}")
         self.ticket_type_name = ticket_type_name
 
-        # Kérdések típustól függően
         type_conf = guild_conf["ticket_types"].get(ticket_type_name, {})
         questions = type_conf.get("questions", ["Írd le a problémát"])
         for q in questions:
@@ -70,7 +69,6 @@ class TicketModal(ui.Modal):
             color=color
         )
 
-        # Kérdések-válaszok embed
         for i, child in enumerate(self.children, start=1):
             embed.add_field(name=f"Kérdés {i}", value=child.value, inline=False)
 
@@ -92,7 +90,11 @@ class TicketPanel(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         for tname in guild_conf.get("ticket_types", {}):
-            self.add_item(ui.Button(label=tname, style=discord.ButtonStyle.primary, custom_id=f"ticket_{tname}"))
+            self.add_item(ui.Button(
+                label=tname,
+                style=discord.ButtonStyle.primary,
+                custom_id=f"ticket_{tname}"
+            ))
 
 # ---------- Ready ----------
 @bot.event
@@ -108,7 +110,11 @@ async def on_ready():
 @bot.tree.command(name="ticket_panel", description="Ticket panel küldése")
 async def ticket_panel(interaction: discord.Interaction):
     view = TicketPanel()
-    await interaction.response.send_message("Válassz ticket típust:", view=view, ephemeral=True)
+    await interaction.response.send_message(
+        "Válassz ticket típust a létrehozáshoz:",
+        view=view,
+        ephemeral=False
+    )
 
 @bot.tree.command(name="ticket_type_add", description="Új ticket típus hozzáadása")
 @app_commands.describe(
@@ -123,7 +129,7 @@ async def ticket_type_add(interaction: discord.Interaction, name: str, color: st
     guild_conf["ticket_types"][name] = {"roles": role_ids, "color": color.lower(), "questions": question_list}
     save_config(guild_conf)
 
-    # Küldjük automatikusan a panelt
+    # Automatikusan küldjük a panelt
     view = TicketPanel()
     await interaction.response.send_message(
         f"Ticket típus hozzáadva: {name}\nPanel frissítve, kattints a gombra a ticket létrehozásához.",
@@ -175,8 +181,8 @@ async def ticket_close(interaction: discord.Interaction, reason: str):
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
     if interaction.type == discord.InteractionType.component:
-        custom_id = interaction.data["custom_id"]
-        if custom_id.startswith("ticket_"):
+        custom_id = interaction.data.get("custom_id")
+        if custom_id and custom_id.startswith("ticket_"):
             ticket_type_name = custom_id.replace("ticket_", "")
             modal = TicketModal(ticket_type_name)
             await interaction.response.send_modal(modal)
