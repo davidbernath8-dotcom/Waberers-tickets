@@ -94,10 +94,6 @@ class TicketPanel(ui.View):
         for tname in guild_conf.get("ticket_types", {}):
             self.add_item(ui.Button(label=tname, style=discord.ButtonStyle.primary, custom_id=f"ticket_{tname}"))
 
-    @ui.button(label="Dummy", style=discord.ButtonStyle.gray, custom_id="dummy", disabled=True)
-    async def dummy(self, interaction: discord.Interaction, button: ui.Button):
-        await interaction.response.defer()
-
 # ---------- Ready ----------
 @bot.event
 async def on_ready():
@@ -111,6 +107,82 @@ async def on_ready():
 # ---------- Ticket Commands ----------
 @bot.tree.command(name="ticket_panel", description="Ticket panel küldése")
 async def ticket_panel(interaction: discord.Interaction):
+    view = TicketPanel()
+    await interaction.response.send_message("Válassz ticket típust:", view=view, ephemeral=True)
+
+@bot.tree.command(name="ticket_type_add", description="Új ticket típus hozzáadása")
+@app_commands.describe(
+    name="Ticket típusa",
+    color="Embed színe (red, green, blue, orange, blurple)",
+    roles="Pingelhető rangok ID, vesszővel elválasztva",
+    questions="Kérdések típushoz, vesszővel elválasztva"
+)
+async def ticket_type_add(interaction: discord.Interaction, name: str, color: str, roles: str, questions: str):
+    role_ids = [int(r.strip()) for r in roles.split(",")] if roles else []
+    question_list = [q.strip() for q in questions.split(",")] if questions else ["Írd le a problémát"]
+    guild_conf["ticket_types"][name] = {"roles": role_ids, "color": color.lower(), "questions": question_list}
+    save_config(guild_conf)
+
+    # Küldjük automatikusan a panelt
+    view = TicketPanel()
+    await interaction.response.send_message(
+        f"Ticket típus hozzáadva: {name}\nPanel frissítve, kattints a gombra a ticket létrehozásához.",
+        view=view,
+        ephemeral=False
+    )
+
+@bot.tree.command(name="ticket_type_remove", description="Ticket típus törlése")
+@app_commands.describe(name="Ticket típusa")
+async def ticket_type_remove(interaction: discord.Interaction, name: str):
+    if name in guild_conf["ticket_types"]:
+        del guild_conf["ticket_types"][name]
+        save_config(guild_conf)
+        await interaction.response.send_message(f"Ticket típus törölve: {name}", ephemeral=True)
+    else:
+        await interaction.response.send_message("Ez a ticket típus nem létezik.", ephemeral=True)
+
+@bot.tree.command(name="log_channel", description="Log csatorna beállítása")
+@app_commands.describe(channel="Ticket log csatorna")
+async def log_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    guild_conf["log_channel"] = channel.id
+    save_config(guild_conf)
+    await interaction.response.send_message(f"Log csatorna beállítva: {channel.mention}", ephemeral=True)
+
+# ---------- Claim / Close ----------
+@bot.tree.command(name="ticket_claim", description="Ticketet claimelni")
+async def ticket_claim(interaction: discord.Interaction):
+    if not any(interaction.channel.name.startswith(k) for k in guild_conf.get("ticket_types", {})):
+        await interaction.response.send_message("Ez nem ticket csatorna!", ephemeral=True)
+        return
+    await interaction.response.send_message(f"{interaction.user.mention} claimelte a ticketet.", ephemeral=False)
+
+@bot.tree.command(name="ticket_close", description="Ticket bezárása")
+@app_commands.describe(reason="Miért zárjuk be?")
+async def ticket_close(interaction: discord.Interaction, reason: str):
+    if not any(interaction.channel.name.startswith(k) for k in guild_conf.get("ticket_types", {})):
+        await interaction.response.send_message("Ez nem ticket csatorna!", ephemeral=True)
+        return
+
+    log_channel_id = guild_conf.get("log_channel")
+    if log_channel_id:
+        log_channel = interaction.guild.get_channel(log_channel_id)
+        if log_channel:
+            await log_channel.send(f"Ticket zárva: {interaction.channel.mention} Zárta: {interaction.user.mention} | Indok: {reason}")
+
+    await interaction.channel.delete()
+
+# ---------- Button callback ----------
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    if interaction.type == discord.InteractionType.component:
+        custom_id = interaction.data["custom_id"]
+        if custom_id.startswith("ticket_"):
+            ticket_type_name = custom_id.replace("ticket_", "")
+            modal = TicketModal(ticket_type_name)
+            await interaction.response.send_modal(modal)
+
+# ---------- Run ----------
+bot.run(os.getenv("TOKEN"))async def ticket_panel(interaction: discord.Interaction):
     await interaction.response.send_message("Válassz ticket típust:", view=TicketPanel(), ephemeral=True)
 
 @bot.tree.command(name="ticket_type_add", description="Új ticket típus hozzáadása")
