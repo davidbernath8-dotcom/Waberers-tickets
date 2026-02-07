@@ -262,8 +262,13 @@ async def ticket_panel(interaction: discord.Interaction):
     )
 
     await interaction.response.send_message(embed=embed, view=view)
+	
+# ================= teszt parancs =================
+# @bot.tree.command(name="invite")
+
 
 # ================= READY =================
+
 
 @bot.event
 async def on_ready():
